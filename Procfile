@@ -1,1 +1,1 @@
-uwsgi --http :5000 --wsgi-file main.py --callable app --processes 4 --threads 2
+gunicorn -w 4 -b 0.0.0.0:5000 main:app
