@@ -207,6 +207,8 @@ def evaluate():
 
 #################################################PATTERN FINDER#############################################
 
+FUNCTION_URL = "https://faas-fra1-afec6ce7.doserverless.co/api/v1/web/fn-c7362c8a-5a73-4f84-91f0-228fc247a5e6/default/show_best_options"
+
 # Ensure the images are saved in a folder
 UPLOAD_FOLDER = 'static/images'
 if not os.path.exists(UPLOAD_FOLDER):
@@ -215,6 +217,23 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 day_counter = 0
 total_days = 0
+
+
+def call_show_best_matches_with_stats():
+    try:
+        # You can use either GET or POST request depending on the function requirements
+        response = requests.get(FUNCTION_URL)
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            print("Function Response:", response.json())
+        else:
+            print(f"Error: Received status code {response.status_code} with message: {response.text}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+
+
 def get_dfs(freq_in_hours, days, cryptos):
     global day_counter, total_days
     day_counter = 0
@@ -461,6 +480,8 @@ def show_best_matches_and_stats():
     total_days = 0
     matches_analyzed = 0
     total_matches = 0
+
+    # Get data from the POST request
     data = request.get_json()
     selected_cryptos = data.get('cryptos', [])
     num_days = data.get('numDays', 10)
@@ -469,43 +490,72 @@ def show_best_matches_and_stats():
     plots_threshold = data.get('plotsThreshold', 10)
 
     images = []
+    stats_data = None
 
+    # Prepare data payload for DigitalOcean function call
     if 'ETH' in selected_cryptos:
         eth_df, _ = get_dfs(freq_in_hours=1, days=num_days, cryptos=['ETHUSDT'])
-        error_df_sorted, eth_images, gains, uds = find_pattern_with_scaled_composite_score_with_probs(
-            data_frame=eth_df,
-            timestamps=timestamps,
-            future_timestamps=future_timestamps,
-            metric='Composite Score',
-            plots_treshold=plots_threshold,
-            no_best_mathces=100
-        )
-        images.extend(eth_images)
-        n = number_of_best_matces()
-        stats(gains, uds, n)
-        stat = stats(gains, uds, n)
+        eth_payload = {
+            "data_frame": eth_df.to_json(orient='split'),
+            "timestamps": timestamps,
+            "future_timestamps": future_timestamps,
+            "metric": "Composite Score",
+            "plots_treshold": plots_threshold,
+            "no_best_mathces": 100
+        }
+        try:
+            # Make POST request to DigitalOcean Function
+            response = requests.post(FUNCTION_URL, json=eth_payload)
+
+            if response.status_code == 200:
+                result = response.json()
+                images.extend(result['plot_images'])
+                gains, uds = result['gain_list'], result['up_down_list']
+                n = number_of_best_matces()
+                stats_data = stats(gains, uds, n)
+            else:
+                return jsonify({'status': 'Error', 'message': f"Failed to get ETH data, status code: {response.status_code}"})
+
+        except requests.exceptions.RequestException as e:
+            return jsonify({'status': 'Error', 'message': f"Request to DigitalOcean failed: {e}"})
 
     if 'BTC' in selected_cryptos:
         _, btc_df = get_dfs(freq_in_hours=1, days=num_days, cryptos=['BTCUSDT'])
-        error_df_sorted, btc_images, gains, uds = find_pattern_with_scaled_composite_score_with_probs(
-            data_frame=btc_df,
-            timestamps=timestamps,
-            future_timestamps=future_timestamps,
-            metric='Composite Score',
-            plots_treshold=plots_threshold,
-            no_best_mathces=100
-        )
-        images.extend(btc_images)
-        n = number_of_best_matces()
-        stat = stats(gains, uds, n)
-    return jsonify({'status': 'Best matches shown',
-                    'images': images,
-                    'gains_mean': stat[0],
-                    'uds_mean': stat[1],
-                    'gains_out_1std_mean':stat[2],
-                    'gains_out_2std_mean': stat[3],
-                    'len_gains_out_1std_mean': stat[4],
-                    'len_gains_out_2std_mean': stat[5]})
+        btc_payload = {
+            "data_frame": btc_df.to_json(orient='split'),
+            "timestamps": timestamps,
+            "future_timestamps": future_timestamps,
+            "metric": "Composite Score",
+            "plots_treshold": plots_threshold,
+            "no_best_mathces": 100
+        }
+        try:
+            # Make POST request to DigitalOcean Function
+            response = requests.post(FUNCTION_URL, json=btc_payload)
+
+            if response.status_code == 200:
+                result = response.json()
+                images.extend(result['plot_images'])
+                gains, uds = result['gain_list'], result['up_down_list']
+                n = number_of_best_matces()
+                stats_data = stats(gains, uds, n)
+            else:
+                return jsonify({'status': 'Error', 'message': f"Failed to get BTC data, status code: {response.status_code}"})
+
+        except requests.exceptions.RequestException as e:
+            return jsonify({'status': 'Error', 'message': f"Request to DigitalOcean failed: {e}"})
+
+    # Return the results
+    return jsonify({
+        'status': 'Best matches shown',
+        'images': images,
+        'gains_mean': stats_data[0],
+        'uds_mean': stats_data[1],
+        'gains_out_1std_mean': stats_data[2],
+        'gains_out_2std_mean': stats_data[3],
+        'len_gains_out_1std_mean': stats_data[4],
+        'len_gains_out_2std_mean': stats_data[5]
+    })
 
 #################################################PATTERN FINDER#############################################
 
