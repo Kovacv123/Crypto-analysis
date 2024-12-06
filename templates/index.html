@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Options Evaluation</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .highlight {
+            background-color: #ffeb3b; /* Yellow for highlighted rows */
+        }
+        .option-link {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .option-link:hover {
+            text-decoration: underline;
+        }
+        .seen-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .seen-button.seen {
+            background-color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <a href="/page2" class="btn btn-primary" id="navigateBtn">Go to Pattern Finder</a>
+    <div class="container mt-4">
+        <h1 class="text-center">Crypto Options Evaluation</h1>
+
+        <form id="optionsForm" class="mb-4">
+            <div class="form-group">
+                <label for="earliest_expiry_date">Earliest expiry Date:</label>
+                <input type="date" class="form-control" id="earliest_expiry_date" name="earliest_expiry_date" required>
+            </div>
+            <div class="form-group">
+                <label for="expiry_date">Expiry Date:</label>
+                <input type="date" class="form-control" id="expiry_date" name="expiry_date" required>
+            </div>
+
+            <div class="form-group">
+                <label for="crypto">Cryptocurrency:</label>
+                <select id="crypto" name="crypto" class="form-control" required>
+                    <option value="BTC">Bitcoin (BTC)</option>
+                    <option value="ETH">Ethereum (ETH)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="option_type">Option Type:</label>
+                <select id="option_type" name="option_type" class="form-control" required>
+                    <option value="C">Call</option>
+                    <option value="P">Put</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="percentage_threshold">Percentage Threshold:</label>
+                <input type="number" class="form-control" step="0.1" id="percentage_threshold" name="percentage_threshold" value="1" required>
+            </div>
+            <div class="form-group">
+                <label for="min_price">How much lower strike price can be than the underlying price:</label>
+                <input type="number" class="form-control" step="1000" id="min_price" name="min_price" value="10000" required>
+            </div>
+            <div class="form-group">
+                <label for="max_price">How much higher strike price can be than the underlying price:</label>
+                <input type="number" class="form-control" step="1000" id="max_price" name="max_price" value="10000" required>
+            </div>
+            <div class="form-group">
+                <label for="min_volume">Min Volume:</label>
+                <input type="number" class="form-control" step="0.1" id="min_volume" name="min_volume" value="0" required>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="startEvaluation()">Evaluate Options</button>
+        </form>
+
+        <h2 class="text-center">Options Data</h2>
+        <table class="table table-striped table-bordered" id="optionsTable">
+            <thead class="thead-dark">
+                <tr>
+                    <th>Symbol</th>
+                    <th>Underlying Price</th>
+                    <th>Strike Price</th>
+                    <th>Ask Price</th>
+                    <th>Bid Price</th>
+                    <th>Volume</th>
+                    <th>Ask/True Price Ratio</th>
+                    <th>True Price</th>
+                    <th>Seen</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        let evaluationInterval;
+        const seenOptions = {};
+
+        function startEvaluation() {
+            if (evaluationInterval) {
+                clearInterval(evaluationInterval);
+            }
+            fetchAndUpdateOptions();  // Fetch immediately
+            evaluationInterval = setInterval(fetchAndUpdateOptions, 30000); // Update every 30 seconds
+        }
+
+        function fetchAndUpdateOptions() {
+            const formData = new FormData(document.getElementById('optionsForm'));
+
+            fetch('/evaluate', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                const tbody = document.querySelector('#optionsTable tbody');
+                tbody.innerHTML = '';
+
+                // Sort options with highlighted ones first
+                data.sort((a, b) => b.highlight - a.highlight);
+
+                let newMatchingOption = false;
+
+                data.forEach(option => {
+                    const row = document.createElement('tr');
+
+                    if (option.highlight) {
+                        const truePrice = option.true_price || 1;
+                        const ratio = option.ask_price / option.true_price;
+                        const greenIntensity = 255 - (1 / ratio) * 200;
+
+                        row.style.backgroundColor = `rgb(0, ${greenIntensity}, 0)`;
+                        row.style.color = 'white';
+
+                        if (!seenOptions[option.symbol] || ratio < seenOptions[option.symbol].ratio * 0.9) {
+                            newMatchingOption = true;
+                        }
+                    }
+
+                    const baseSymbol = option.symbol.includes('BTC') ? 'BTCUSDT' : 'ETHUSDT';
+                    const symbolLink = `https://www.binance.com/en/eoptions/${baseSymbol}?symbol=${option.symbol}`;
+
+                    row.innerHTML = `
+                        <td><a href="${symbolLink}" target="_blank" class="option-link" onclick="sendEmailOnClick('${option.symbol}')">${option.symbol}</a></td>
+                        <td>${option.underlying_price.toFixed(2)}</td>
+                        <td>${option.strike_price.toFixed(2)}</td>
+                        <td>${option.ask_price.toFixed(2)}</td>
+                        <td>${option.bid_price.toFixed(2)}</td>
+                        <td>${option.volume || 'N/A'}</td>
+                        <td>${(option.ask_price / option.true_price).toFixed(4)}</td>
+                        <td>${option.true_price !== null ? option.true_price.toFixed(2) : ''}</td>
+                        <td><button class="seen-button ${seenOptions[option.symbol] ? 'seen' : ''}" onclick="toggleSeen('${option.symbol}', ${option.ask_price / option.true_price})">${seenOptions[option.symbol] ? 'Seen' : 'Not seen'}</button></td>
+                    `;
+
+
+                    tbody.appendChild(row);
+                });
+
+                if (newMatchingOption) {
+                    flashScreen();
+                }
+            })
+            .catch(error => console.error('Error fetching options:', error));
+        }
+
+        function flashScreen() {
+            let flashes = 0;
+            const flashInterval = setInterval(() => {
+                if (flashes < 6) {
+                    document.body.style.backgroundColor = flashes % 2 === 0 ? 'darkgreen' : '#ffffff';
+                    flashes++;
+                } else {
+                    clearInterval(flashInterval);
+                    document.body.style.backgroundColor = '#ffffff';
+                }
+            }, 300);
+        }
+
+        function sendEmailOnClick(symbol) {
+            fetch('/send_email_on_click', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ symbol: symbol }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "Email sent") {
+                    console.log("Email sent successfully");
+                } else {
+                    console.error("Failed to send email:", data.error);
+                }
+            })
+            .catch(error => console.error('Error sending email:', error));
+        }
+
+
+        function toggleSeen(symbol, ratio) {
+            if (seenOptions[symbol]) {
+                delete seenOptions[symbol];
+            } else {
+                seenOptions[symbol] = { ratio };
+            }
+            fetchAndUpdateOptions();
+        }
+    </script>
+</body>
+</html>

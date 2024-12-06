@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Pattern Matcher</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="bg-light">
+    <a href="/" class="btn btn-primary" id="navigateBtn">Go to Options Finder</a>
+    <div class="container mt-5">
+        <div class="text-center">
+            <h1 class="mb-4 text-primary">Crypto Pattern Finder</h1>
+            <p class="lead">Enter data.</p>
+        </div>
+
+        <!-- Input Section -->
+        <div class="row justify-content-center my-4">
+            <div class="col-md-6">
+                <label for="numDays" class="form-label">How many past days do you want analyzed?</label>
+                <input type="number" id="numDays" class="form-control" value="10" min="1">
+
+                <label for="timestamps" class="form-label mt-3">How many timestamps should the pattern have?</label>
+                <input type="number" id="timestamps" class="form-control" value="48" min="1">
+
+                <label for="futureTimestamps" class="form-label mt-3">How many timestamps into the future should be displayed?</label>
+                <input type="number" id="futureTimestamps" class="form-control" value="24" min="1">
+
+                <label for="plotsThreshold" class="form-label mt-3">How many plots should be displayed?</label>
+                <input type="number" id="plotsThreshold" class="form-control" value="10" min="1">
+            </div>
+        </div>
+
+        <!-- Cryptocurrency Selection -->
+        <div class="row justify-content-center my-4">
+            <div class="col-md-6">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" value="BTC" id="btcCheck" checked>
+                    <label class="form-check-label" for="btcCheck">BTC</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" value="ETH" id="ethCheck">
+                    <label class="form-check-label" for="ethCheck">ETH</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="row justify-content-center my-4">
+            <div class="col-md-6">
+                <!-- Show Best Matches Button -->
+                <button id="showMatchesBtn" class="btn btn-success btn-lg w-100">Show Best Matches</button>
+            </div>
+        </div>
+
+        <div class="row justify-content-center my-4">
+            <div class="col-md-6">
+                <div class="border p-3 rounded bg-white">
+                    <h4 class="text-secondary">Stats:</h4>
+                    <p id="label1" class="text-dark">Mean gains: <span class="text-primary">N/A</span></p>
+                    <p id="label2" class="text-dark">Mean ups and downs: <span class="text-primary">N/A</span></p>
+                    <p id="label3" class="text-dark">Gains out 1std mean: <span class="text-primary">N/A</span></p>
+                    <p id="label4" class="text-dark">Number of gains out 1std mean: <span class="text-primary">N/A</span></p>
+                    <p id="label5" class="text-dark">Gains out 2std mean: <span class="text-primary">N/A</span></p>
+                    <p id="label6" class="text-dark">Number of gains out 2std mean: <span class="text-primary">N/A</span></p>
+                </div>
+            </div>
+        </div>
+
+        <div id="outputSection" class="mt-5">
+            <h3 class="text-center text-secondary">Results</h3>
+            <div id="imagesSection" class="row justify-content-center"></div>
+        </div>
+    </div>
+    <div class="modal fade" id="imageZoomModal" tabindex="-1" aria-labelledby="imageZoomModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg-custom">
+            <div class="modal-content">
+                <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+                <div class="modal-body text-center">
+                    <img id="zoomedImage" src="" class="img-fluid" alt="Zoomed Image">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- JavaScript for Button Actions -->
+    <script>
+        let intervalId;
+
+        // Function to update button text
+        function updateButtonText() {
+            const button = document.getElementById('showMatchesBtn');
+
+            fetch('/get_progress')
+                .then(response => response.json())
+                .then(data => {
+                    const day_counter = data.day_counter;
+                    const total_days = data.total_days;
+                    const progress_percentage = (day_counter / total_days) * 100; // Calculate progress
+                    const matches_analyzed = data.matches_analyzed;
+                    const total_matches = data.total_matches;
+                    const matches_progress_percentage = matches_analyzed/total_matches*100;
+
+
+                    if (progress_percentage < 100) {
+                        button.textContent = `Fetching data... ${day_counter.toFixed(0)} out of ${total_days} fetched (${progress_percentage.toFixed(2)}%)`;
+                    } else if (matches_progress_percentage < 100) {
+                        button.textContent = `Finding best matches... ${matches_analyzed.toFixed(0)} out of ${total_matches} analyzed (${matches_progress_percentage.toFixed(2)}%)`; // Update the final state
+                    }
+                    else if (matches_progress_percentage >= 100 && progress_percentage >= 100) {
+                        clearInterval(intervalId);
+                        intervalId = null; // Reset for future clicks
+                        button.textContent = `Show Best Matches`;
+                    }
+                })
+                .catch(error => console.error('Error fetching progress data:', error));
+        }
+
+        // Event listener for the button click
+        document.getElementById('showMatchesBtn').addEventListener('click', function () {
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+            intervalId = setInterval(updateButtonText, 500);
+
+            // Clear existing content
+            document.getElementById('imagesSection').innerHTML = '';
+            document.querySelectorAll('#label1, #label2, #label3, #label4, #label5, #label6').forEach(label => {
+                label.textContent = label.textContent.split(':')[0] + ': N/A';
+            });
+
+            const numDays = parseInt(document.getElementById('numDays').value);
+            const timestamps = parseInt(document.getElementById('timestamps').value);
+            const futureTimestamps = parseInt(document.getElementById('futureTimestamps').value);
+            const plotsThreshold = parseInt(document.getElementById('plotsThreshold').value);
+            const cryptos = ['BTC', 'ETH'].filter(crypto => document.getElementById(`${crypto.toLowerCase()}Check`).checked);
+
+            fetch('/show_best_matches', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cryptos, numDays, timestamps, futureTimestamps, plotsThreshold })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    const imagesSection = document.getElementById('imagesSection');
+                    data.images.forEach(src => {
+                        const img = document.createElement('img');
+                        img.src = src;
+                        img.classList.add('img-fluid', 'col-md-4', 'p-2');
+                        imagesSection.appendChild(img);
+                    });
+                    const { gains_mean, uds_mean, gains_out_1std_mean, gains_out_2std_mean, len_gains_out_1std_mean, len_gains_out_2std_mean } = data;
+                    document.getElementById('label1').textContent = `Mean gains: ${gains_mean}`;
+                    document.getElementById('label2').textContent = `Mean ups and downs: ${uds_mean}`;
+                    document.getElementById('label3').textContent = `Gains out 1std mean: ${gains_out_1std_mean}`;
+                    document.getElementById('label4').textContent = `Number of gains out 1std mean: ${len_gains_out_1std_mean}`;
+                    document.getElementById('label5').textContent = `Gains out 2std mean: ${gains_out_2std_mean}`;
+                    document.getElementById('label6').textContent = `Number of gains out 2std mean: ${len_gains_out_2std_mean}`;
+                })
+                .catch(console.error);
+        });
+
+        document.getElementById('imagesSection').addEventListener('click', function (event) {
+            if (event.target.tagName === 'IMG') {
+                document.getElementById('zoomedImage').src = event.target.src;
+                new bootstrap.Modal(document.getElementById('imageZoomModal')).show();
+            }
+        });
+    </script>
+</body>
+</html>
