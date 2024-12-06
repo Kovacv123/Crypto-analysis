@@ -469,71 +469,43 @@ def show_best_matches_and_stats():
     plots_threshold = data.get('plotsThreshold', 10)
 
     images = []
-    stats_data = None
-
-    FUNCTION_URL = "https://faas-fra1-afec6ce7.doserverless.co/api/v1/web/fn-c7362c8a-5a73-4f84-91f0-228fc247a5e6/default/show_best_options"
-
-    # Prepare payload to call DigitalOcean Function
-    def prepare_payload(data_frame):
-        return {
-            "data_frame": data_frame.to_json(orient='split'),
-            "timestamps": timestamps,
-            "future_timestamps": future_timestamps,
-            "metric": "Composite Score",
-            "plots_treshold": plots_threshold,
-            "no_best_mathces": 100
-        }
 
     if 'ETH' in selected_cryptos:
         eth_df, _ = get_dfs(freq_in_hours=1, days=num_days, cryptos=['ETHUSDT'])
-        payload = prepare_payload(eth_df)
-
-        try:
-            response = requests.post(FUNCTION_URL, json=payload)
-            if response.status_code == 200:
-                result = response.json()
-                images.extend(result['plot_images'])
-                gains, uds = result['gain_list'], result['up_down_list']
-                n = number_of_best_matces()
-                stats_data = stats(gains, uds, n)
-            else:
-                return jsonify(
-                    {'status': 'Error', 'message': f"Failed to get ETH data, status code: {response.status_code}"})
-        except requests.exceptions.RequestException as e:
-            return jsonify({'status': 'Error', 'message': f"Request to DigitalOcean failed: {e}"})
+        error_df_sorted, eth_images, gains, uds = find_pattern_with_scaled_composite_score_with_probs(
+            data_frame=eth_df,
+            timestamps=timestamps,
+            future_timestamps=future_timestamps,
+            metric='Composite Score',
+            plots_treshold=plots_threshold,
+            no_best_mathces=100
+        )
+        images.extend(eth_images)
+        n = number_of_best_matces()
+        stats(gains, uds, n)
+        stat = stats(gains, uds, n)
 
     if 'BTC' in selected_cryptos:
         _, btc_df = get_dfs(freq_in_hours=1, days=num_days, cryptos=['BTCUSDT'])
-        payload = prepare_payload(btc_df)
-
-        try:
-            response = requests.post(FUNCTION_URL, json=payload)
-            if response.status_code == 200:
-                result = response.json()
-                images.extend(result['plot_images'])
-                gains, uds = result['gain_list'], result['up_down_list']
-                n = number_of_best_matces()
-                stats_data = stats(gains, uds, n)
-            else:
-                return jsonify(
-                    {'status': 'Error', 'message': f"Failed to get BTC data, status code: {response.status_code}"})
-        except requests.exceptions.RequestException as e:
-            return jsonify({'status': 'Error', 'message': f"Request to DigitalOcean failed: {e}"})
-
-    if stats_data is None:
-        return jsonify({'status': 'No valid data found for any selected cryptos'})
-
-    return jsonify({
-        'status': 'Best matches shown',
-        'images': images,
-        'gains_mean': stats_data[0],
-        'uds_mean': stats_data[1],
-        'gains_out_1std_mean': stats_data[2],
-        'gains_out_2std_mean': stats_data[3],
-        'len_gains_out_1std_mean': stats_data[4],
-        'len_gains_out_2std_mean': stats_data[5]
-    })
-
+        error_df_sorted, btc_images, gains, uds = find_pattern_with_scaled_composite_score_with_probs(
+            data_frame=btc_df,
+            timestamps=timestamps,
+            future_timestamps=future_timestamps,
+            metric='Composite Score',
+            plots_treshold=plots_threshold,
+            no_best_mathces=100
+        )
+        images.extend(btc_images)
+        n = number_of_best_matces()
+        stat = stats(gains, uds, n)
+    return jsonify({'status': 'Best matches shown',
+                    'images': images,
+                    'gains_mean': stat[0],
+                    'uds_mean': stat[1],
+                    'gains_out_1std_mean':stat[2],
+                    'gains_out_2std_mean': stat[3],
+                    'len_gains_out_1std_mean': stat[4],
+                    'len_gains_out_2std_mean': stat[5]})
 
 #################################################PATTERN FINDER#############################################
 
